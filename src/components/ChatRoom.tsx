@@ -3,8 +3,17 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Send, X, RotateCcw, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { supabase, getSessionId } from "@/lib/supabase";
+import { supabase } from "@/integrations/supabase/client";
 import type { RealtimeChannel } from "@supabase/supabase-js";
+
+const getSessionId = (): string => {
+  let sessionId = sessionStorage.getItem("whispr_session_id");
+  if (!sessionId) {
+    sessionId = crypto.randomUUID();
+    sessionStorage.setItem("whispr_session_id", sessionId);
+  }
+  return sessionId;
+};
 
 interface ChatRoomProps {
   category: string;
@@ -39,7 +48,6 @@ const ChatRoom = ({ category, tags, onDisconnect }: ChatRoomProps) => {
     scrollToBottom();
   }, [messages]);
 
-  // Cleanup function
   const cleanup = useCallback(async () => {
     if (channelRef.current) {
       supabase.removeChannel(channelRef.current);
@@ -49,15 +57,12 @@ const ChatRoom = ({ category, tags, onDisconnect }: ChatRoomProps) => {
       clearInterval(pollingRef.current);
       pollingRef.current = null;
     }
-    // Remove from queue
     await supabase.from("chat_queue").delete().eq("session_id", sessionId);
-    // Mark room as inactive
     if (roomId) {
       await supabase.from("chat_rooms").update({ is_active: false }).eq("id", roomId);
     }
   }, [sessionId, roomId]);
 
-  // Subscribe to a chat room
   const subscribeToRoom = useCallback(
     (rid: string) => {
       setRoomId(rid);
@@ -72,7 +77,6 @@ const ChatRoom = ({ category, tags, onDisconnect }: ChatRoomProps) => {
         },
       ]);
 
-      // Load existing messages
       supabase
         .from("chat_messages")
         .select("*")
@@ -90,52 +94,31 @@ const ChatRoom = ({ category, tags, onDisconnect }: ChatRoomProps) => {
           }
         });
 
-      // Subscribe to new messages in real-time
       const channel = supabase
         .channel(`room-${rid}`)
         .on(
           "postgres_changes",
-          {
-            event: "INSERT",
-            schema: "public",
-            table: "chat_messages",
-            filter: `room_id=eq.${rid}`,
-          },
+          { event: "INSERT", schema: "public", table: "chat_messages", filter: `room_id=eq.${rid}` },
           (payload) => {
             const msg = payload.new as any;
             if (msg.sender_session !== sessionId) {
               setMessages((prev) => [
                 ...prev,
-                {
-                  id: msg.id,
-                  text: msg.message,
-                  sender: "stranger",
-                  timestamp: new Date(msg.created_at),
-                },
+                { id: msg.id, text: msg.message, sender: "stranger", timestamp: new Date(msg.created_at) },
               ]);
             }
           }
         )
         .on(
           "postgres_changes",
-          {
-            event: "UPDATE",
-            schema: "public",
-            table: "chat_rooms",
-            filter: `id=eq.${rid}`,
-          },
+          { event: "UPDATE", schema: "public", table: "chat_rooms", filter: `id=eq.${rid}` },
           (payload) => {
             const room = payload.new as any;
             if (!room.is_active) {
               setStrangerDisconnected(true);
               setMessages((prev) => [
                 ...prev,
-                {
-                  id: `system-disc-${Date.now()}`,
-                  text: "Stranger has disconnected.",
-                  sender: "system",
-                  timestamp: new Date(),
-                },
+                { id: `system-disc-${Date.now()}`, text: "Stranger has disconnected.", sender: "system", timestamp: new Date() },
               ]);
             }
           }
@@ -147,14 +130,12 @@ const ChatRoom = ({ category, tags, onDisconnect }: ChatRoomProps) => {
     [sessionId]
   );
 
-  // Find a match
   const findMatch = useCallback(async () => {
     setIsConnecting(true);
     setMessages([]);
     setRoomId(null);
     setStrangerDisconnected(false);
 
-    // Clean up previous
     if (channelRef.current) {
       supabase.removeChannel(channelRef.current);
       channelRef.current = null;
@@ -164,10 +145,8 @@ const ChatRoom = ({ category, tags, onDisconnect }: ChatRoomProps) => {
       pollingRef.current = null;
     }
 
-    // Remove old queue entries
     await supabase.from("chat_queue").delete().eq("session_id", sessionId);
 
-    // Check if someone is already waiting in this category
     const { data: waiting } = await supabase
       .from("chat_queue")
       .select("*")
@@ -178,32 +157,21 @@ const ChatRoom = ({ category, tags, onDisconnect }: ChatRoomProps) => {
 
     if (waiting && waiting.length > 0) {
       const partner = waiting[0];
-      // Remove partner from queue
       await supabase.from("chat_queue").delete().eq("id", partner.id);
 
-      // Create a room
       const { data: room } = await supabase
         .from("chat_rooms")
-        .insert({
-          user1_session: partner.session_id,
-          user2_session: sessionId,
-          category,
-          is_active: true,
-        })
+        .insert({ user1_session: partner.session_id, user2_session: sessionId, category, is_active: true })
         .select()
         .single();
 
-      if (room) {
-        subscribeToRoom(room.id);
-      }
+      if (room) subscribeToRoom(room.id);
     } else {
-      // Join the queue
       await supabase.from("chat_queue").upsert(
         { session_id: sessionId, category, tags },
         { onConflict: "session_id" }
       );
 
-      // Poll for a room where we got matched
       pollingRef.current = setInterval(async () => {
         const { data: rooms } = await supabase
           .from("chat_rooms")
@@ -218,7 +186,6 @@ const ChatRoom = ({ category, tags, onDisconnect }: ChatRoomProps) => {
             clearInterval(pollingRef.current);
             pollingRef.current = null;
           }
-          // Remove from queue
           await supabase.from("chat_queue").delete().eq("session_id", sessionId);
           subscribeToRoom(rooms[0].id);
         }
@@ -226,12 +193,9 @@ const ChatRoom = ({ category, tags, onDisconnect }: ChatRoomProps) => {
     }
   }, [category, tags, sessionId, subscribeToRoom]);
 
-  // Start matching on mount
   useEffect(() => {
     findMatch();
-    return () => {
-      cleanup();
-    };
+    return () => { cleanup(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -239,7 +203,6 @@ const ChatRoom = ({ category, tags, onDisconnect }: ChatRoomProps) => {
     const trimmed = input.trim();
     if (!trimmed || !roomId || strangerDisconnected) return;
 
-    // Optimistic update
     const tempId = `you-${Date.now()}`;
     setMessages((prev) => [
       ...prev,
@@ -274,60 +237,33 @@ const ChatRoom = ({ category, tags, onDisconnect }: ChatRoomProps) => {
 
   return (
     <div className="h-screen flex flex-col bg-background">
-      {/* Header */}
       <div className="glass border-b border-border/50 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-bold text-gradient">whispr</h1>
-          <Badge variant="outline" className="text-xs text-muted-foreground">
-            {category}
-          </Badge>
+          <Badge variant="outline" className="text-xs text-muted-foreground">{category}</Badge>
           {tags.slice(0, 3).map((t) => (
-            <Badge key={t} variant="outline" className="text-xs text-muted-foreground hidden md:inline-flex">
-              {t}
-            </Badge>
+            <Badge key={t} variant="outline" className="text-xs text-muted-foreground hidden md:inline-flex">{t}</Badge>
           ))}
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={reconnect}
-            className="text-muted-foreground hover:text-primary"
-          >
+          <Button variant="ghost" size="sm" onClick={reconnect} className="text-muted-foreground hover:text-primary">
             <RotateCcw className="w-4 h-4 mr-1" /> New
           </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleLeave}
-            className="text-muted-foreground hover:text-destructive"
-          >
+          <Button variant="ghost" size="sm" onClick={handleLeave} className="text-muted-foreground hover:text-destructive">
             <X className="w-4 h-4 mr-1" /> Leave
           </Button>
         </div>
       </div>
 
-      {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-6 space-y-3">
         {isConnecting && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="flex flex-col items-center justify-center h-full gap-4"
-          >
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center justify-center h-full gap-4">
             <div className="flex gap-1">
               {[0, 1, 2].map((i) => (
-                <motion.div
-                  key={i}
-                  className="w-3 h-3 rounded-full bg-primary"
-                  animate={{ y: [0, -12, 0] }}
-                  transition={{ repeat: Infinity, duration: 0.8, delay: i * 0.15 }}
-                />
+                <motion.div key={i} className="w-3 h-3 rounded-full bg-primary" animate={{ y: [0, -12, 0] }} transition={{ repeat: Infinity, duration: 0.8, delay: i * 0.15 }} />
               ))}
             </div>
-            <p className="text-muted-foreground font-mono text-sm">
-              Looking for a stranger...
-            </p>
+            <p className="text-muted-foreground font-mono text-sm">Looking for a stranger...</p>
           </motion.div>
         )}
 
@@ -337,9 +273,7 @@ const ChatRoom = ({ category, tags, onDisconnect }: ChatRoomProps) => {
               key={msg.id}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              className={`flex ${
-                msg.sender === "you" ? "justify-end" : msg.sender === "system" ? "justify-center" : "justify-start"
-              }`}
+              className={`flex ${msg.sender === "you" ? "justify-end" : msg.sender === "system" ? "justify-center" : "justify-start"}`}
             >
               <div
                 className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm ${
@@ -355,11 +289,9 @@ const ChatRoom = ({ category, tags, onDisconnect }: ChatRoomProps) => {
             </motion.div>
           ))}
         </AnimatePresence>
-
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input */}
       <div className="glass border-t border-border/50 px-4 py-3">
         <div className="flex items-center gap-2 max-w-3xl mx-auto">
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground mr-2">
@@ -371,13 +303,7 @@ const ChatRoom = ({ category, tags, onDisconnect }: ChatRoomProps) => {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={
-              isConnecting
-                ? "Connecting..."
-                : strangerDisconnected
-                ? "Stranger left. Click 'New' to find another."
-                : "Type a message..."
-            }
+            placeholder={isConnecting ? "Connecting..." : strangerDisconnected ? "Stranger left. Click 'New' to find another." : "Type a message..."}
             disabled={isConnecting || strangerDisconnected}
             className="flex-1 bg-secondary/50 border border-border/50 rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors disabled:opacity-50"
           />

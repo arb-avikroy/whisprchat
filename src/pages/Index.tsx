@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
+import { supabase } from "@/integrations/supabase/client";
 import { MessageCircle, Users, Globe, Shield, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +25,36 @@ const Index = () => {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [isChatting, setIsChatting] = useState(false);
+  const [queueCounts, setQueueCounts] = useState<Record<string, number>>({});
+
+  // Fetch queue counts and subscribe to real-time changes
+  useEffect(() => {
+    const fetchCounts = async () => {
+      const { data } = await supabase.from("chat_queue").select("category");
+      if (data) {
+        const counts: Record<string, number> = {};
+        data.forEach((row) => {
+          counts[row.category] = (counts[row.category] || 0) + 1;
+        });
+        setQueueCounts(counts);
+      }
+    };
+
+    fetchCounts();
+
+    const channel = supabase
+      .channel("queue-counts")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "chat_queue" },
+        () => fetchCounts()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   const toggleTag = (tag: string) => {
     setSelectedTags((prev) =>
@@ -104,7 +135,15 @@ const Index = () => {
                     isSelected ? "border-primary glow-primary" : ""
                   }`}
                 >
-                  <Icon className={`w-5 h-5 mb-2 ${isSelected ? "text-primary" : "text-muted-foreground"}`} />
+                  <div className="flex items-center justify-between mb-2">
+                    <Icon className={`w-5 h-5 ${isSelected ? "text-primary" : "text-muted-foreground"}`} />
+                    {(queueCounts[cat.id] || 0) > 0 && (
+                      <span className="flex items-center gap-1 text-xs text-online font-mono">
+                        <span className="w-1.5 h-1.5 rounded-full bg-online pulse-online" />
+                        {queueCounts[cat.id]}
+                      </span>
+                    )}
+                  </div>
                   <div className="font-medium text-sm">{cat.label}</div>
                   <div className="text-xs text-muted-foreground mt-0.5">{cat.desc}</div>
                 </button>
