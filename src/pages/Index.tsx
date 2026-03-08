@@ -135,7 +135,15 @@ const Index = () => {
                     isSelected ? "border-primary glow-primary" : ""
                   }`}
                 >
-                  <Icon className={`w-5 h-5 mb-2 ${isSelected ? "text-primary" : "text-muted-foreground"}`} />
+                  <div className="flex items-center justify-between mb-2">
+                    <Icon className={`w-5 h-5 ${isSelected ? "text-primary" : "text-muted-foreground"}`} />
+                    {(queueCounts[cat.id] || 0) > 0 && (
+                      <span className="flex items-center gap-1 text-xs text-online font-mono">
+                        <span className="w-1.5 h-1.5 rounded-full bg-online pulse-online" />
+                        {queueCounts[cat.id]}
+                      </span>
+                    )}
+                  </div>
                   <div className="font-medium text-sm">{cat.label}</div>
                   <div className="text-xs text-muted-foreground mt-0.5">{cat.desc}</div>
                 </button>
