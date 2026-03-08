@@ -27,6 +27,7 @@ const Index = () => {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [customInterest, setCustomInterest] = useState("");
   const [isChatting, setIsChatting] = useState(false);
+  const [chatTags, setChatTags] = useState<string[]>([]);
   const [queueCounts, setQueueCounts] = useState<Record<string, number>>({});
   const [totalOnline, setTotalOnline] = useState(0);
 
