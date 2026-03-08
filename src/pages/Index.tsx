@@ -25,6 +25,36 @@ const Index = () => {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [isChatting, setIsChatting] = useState(false);
+  const [queueCounts, setQueueCounts] = useState<Record<string, number>>({});
+
+  // Fetch queue counts and subscribe to real-time changes
+  useEffect(() => {
+    const fetchCounts = async () => {
+      const { data } = await supabase.from("chat_queue").select("category");
+      if (data) {
+        const counts: Record<string, number> = {};
+        data.forEach((row) => {
+          counts[row.category] = (counts[row.category] || 0) + 1;
+        });
+        setQueueCounts(counts);
+      }
+    };
+
+    fetchCounts();
+
+    const channel = supabase
+      .channel("queue-counts")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "chat_queue" },
+        () => fetchCounts()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   const toggleTag = (tag: string) => {
     setSelectedTags((prev) =>
