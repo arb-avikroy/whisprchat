@@ -101,9 +101,10 @@ const Index = () => {
               {totalOnline.toLocaleString()} {totalOnline === 1 ? "stranger" : "strangers"} online
             </span>
           </div>
-          <h1 className="text-5xl md:text-7xl font-bold mb-4 tracking-tight">
+          <h1 className="text-5xl md:text-7xl font-bold mb-2 tracking-tight">
             <span className="text-gradient">whispr</span>
           </h1>
+          <p className="text-base font-medium text-primary/80 mb-4">Best Omegle Alternative</p>
           <p className="text-lg text-muted-foreground max-w-md mx-auto">
             Talk to strangers anonymously. No accounts. No history. Just raw conversations.
           </p>
