@@ -196,6 +196,26 @@ const Index = () => {
               );
             })}
           </div>
+          {selectedTags.length < 5 && (
+            <div className="flex gap-2 mt-3">
+              <Input
+                value={customInterest}
+                onChange={(e) => setCustomInterest(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && addCustomInterest()}
+                placeholder="Type a custom interest..."
+                className="max-w-xs bg-card border-border/50 text-sm"
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={addCustomInterest}
+                disabled={!customInterest.trim()}
+                className="shrink-0"
+              >
+                <Plus className="w-4 h-4 mr-1" /> Add
+              </Button>
+            </div>
+          )}
         </motion.div>
 
         {/* Start Button */}
