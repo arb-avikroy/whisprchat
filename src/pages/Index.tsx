@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
-import { MessageCircle, Users, Globe, Shield, ArrowRight } from "lucide-react";
+import { MessageCircle, Users, Globe, Shield, ArrowRight, Plus } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import ChatRoom from "@/components/ChatRoom";
@@ -24,6 +25,7 @@ const ALL_TAGS = [
 const Index = () => {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [customInterest, setCustomInterest] = useState("");
   const [isChatting, setIsChatting] = useState(false);
   const [queueCounts, setQueueCounts] = useState<Record<string, number>>({});
   const [totalOnline, setTotalOnline] = useState(0);
@@ -64,6 +66,14 @@ const Index = () => {
     setSelectedTags((prev) =>
       prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag].slice(0, 5)
     );
+  };
+
+  const addCustomInterest = () => {
+    const trimmed = customInterest.trim();
+    if (trimmed && !selectedTags.includes(trimmed) && selectedTags.length < 5) {
+      setSelectedTags((prev) => [...prev, trimmed]);
+      setCustomInterest("");
+    }
   };
 
   const startChat = () => {
@@ -186,6 +196,26 @@ const Index = () => {
               );
             })}
           </div>
+          {selectedTags.length < 5 && (
+            <div className="flex gap-2 mt-3">
+              <Input
+                value={customInterest}
+                onChange={(e) => setCustomInterest(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && addCustomInterest()}
+                placeholder="Type a custom interest..."
+                className="max-w-xs bg-card border-border/50 text-sm"
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={addCustomInterest}
+                disabled={!customInterest.trim()}
+                className="shrink-0"
+              >
+                <Plus className="w-4 h-4 mr-1" /> Add
+              </Button>
+            </div>
+          )}
         </motion.div>
 
         {/* Start Button */}
