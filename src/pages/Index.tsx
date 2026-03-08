@@ -68,6 +68,14 @@ const Index = () => {
     );
   };
 
+  const addCustomInterest = () => {
+    const trimmed = customInterest.trim();
+    if (trimmed && !selectedTags.includes(trimmed) && selectedTags.length < 5) {
+      setSelectedTags((prev) => [...prev, trimmed]);
+      setCustomInterest("");
+    }
+  };
+
   const startChat = () => {
     if (selectedCategory) setIsChatting(true);
   };
