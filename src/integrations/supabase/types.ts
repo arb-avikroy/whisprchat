@@ -14,7 +14,89 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      chat_messages: {
+        Row: {
+          created_at: string
+          id: string
+          message: string
+          room_id: string
+          sender_session: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          message: string
+          room_id: string
+          sender_session: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          message?: string
+          room_id?: string
+          sender_session?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chat_messages_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "chat_rooms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      chat_queue: {
+        Row: {
+          category: string
+          created_at: string
+          id: string
+          session_id: string
+          tags: string[] | null
+        }
+        Insert: {
+          category: string
+          created_at?: string
+          id?: string
+          session_id: string
+          tags?: string[] | null
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          id?: string
+          session_id?: string
+          tags?: string[] | null
+        }
+        Relationships: []
+      }
+      chat_rooms: {
+        Row: {
+          category: string
+          created_at: string
+          id: string
+          is_active: boolean
+          user1_session: string
+          user2_session: string
+        }
+        Insert: {
+          category: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          user1_session: string
+          user2_session: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          user1_session?: string
+          user2_session?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
