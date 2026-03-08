@@ -89,7 +89,7 @@ const Index = () => {
     return (
       <ChatRoom
         category={selectedCategory!}
-        tags={selectedTags}
+        tags={chatTags}
         onDisconnect={() => setIsChatting(false)}
       />
     );
