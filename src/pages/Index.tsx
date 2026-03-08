@@ -201,39 +201,28 @@ const Index = () => {
               );
             })}
           </div>
-          {selectedTags.length < 5 && (
-            <div className="flex gap-2 mt-3">
-              <Input
-                value={customInterest}
-                onChange={(e) => setCustomInterest(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && customInterest.trim()) {
-                    e.preventDefault();
-                    startChatWithInterest();
-                  }
-                }}
-                placeholder="Type a custom interest & press Enter to chat..."
-                className="max-w-xs bg-card border-border/50 text-sm"
-              />
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={addCustomInterest}
-                disabled={!customInterest.trim()}
-                className="shrink-0"
-              >
-                <Plus className="w-4 h-4 mr-1" /> Add
-              </Button>
-              <Button
-                size="sm"
-                onClick={startChatWithInterest}
-                disabled={!customInterest.trim()}
-                className="shrink-0 bg-primary text-primary-foreground hover:bg-primary/90"
-              >
-                <ArrowRight className="w-4 h-4 mr-1" /> Chat Now
-              </Button>
-            </div>
-          )}
+          <div className="flex gap-2 mt-4">
+            <Input
+              value={customInterest}
+              onChange={(e) => setCustomInterest(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && customInterest.trim()) {
+                  e.preventDefault();
+                  startChatWithInterest();
+                }
+              }}
+              placeholder="Type your interest & press Enter to chat..."
+              className="max-w-sm bg-card border-border/50 text-sm"
+            />
+            <Button
+              size="sm"
+              onClick={startChatWithInterest}
+              disabled={!customInterest.trim()}
+              className="shrink-0 bg-primary text-primary-foreground hover:bg-primary/90"
+            >
+              <ArrowRight className="w-4 h-4 mr-1" /> Chat Now
+            </Button>
+          </div>
         </motion.div>
 
         {/* Start Button */}
