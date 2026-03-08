@@ -213,8 +213,13 @@ const Index = () => {
               <Input
                 value={customInterest}
                 onChange={(e) => setCustomInterest(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && addCustomInterest()}
-                placeholder="Type a custom interest..."
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && customInterest.trim()) {
+                    e.preventDefault();
+                    startChatWithInterest();
+                  }
+                }}
+                placeholder="Type a custom interest & press Enter to chat..."
                 className="max-w-xs bg-card border-border/50 text-sm"
               />
               <Button
@@ -225,6 +230,14 @@ const Index = () => {
                 className="shrink-0"
               >
                 <Plus className="w-4 h-4 mr-1" /> Add
+              </Button>
+              <Button
+                size="sm"
+                onClick={startChatWithInterest}
+                disabled={!customInterest.trim()}
+                className="shrink-0 bg-primary text-primary-foreground hover:bg-primary/90"
+              >
+                <ArrowRight className="w-4 h-4 mr-1" /> Chat Now
               </Button>
             </div>
           )}
