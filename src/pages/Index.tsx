@@ -98,7 +98,7 @@ const Index = () => {
           <div className="flex items-center justify-center gap-2 mb-4">
             <div className="w-2 h-2 rounded-full bg-online pulse-online" />
             <span className="text-sm text-muted-foreground font-mono">
-              12,847 strangers online
+              {totalOnline.toLocaleString()} {totalOnline === 1 ? "stranger" : "strangers"} online
             </span>
           </div>
           <h1 className="text-5xl md:text-7xl font-bold mb-4 tracking-tight">
