@@ -24,32 +24,21 @@ interface ChatRoomProps {
 interface Message {
   id: string;
   text: string;
-  sender: "you" | "stranger";
+  sender: "you" | "stranger" | "system";
   timestamp: Date;
 }
-
-const STRANGER_RESPONSES = [
-  "Hey! How's it going?",
-  "Nice to meet you, stranger 😄",
-  "What brings you here today?",
-  "That's interesting, tell me more!",
-  "Haha, I totally agree with that",
-  "I've been thinking about the same thing lately",
-  "Cool! Where are you from?",
-  "That's a great point actually",
-  "I love that perspective",
-  "So what do you do for fun?",
-  "That reminds me of something...",
-  "Wow, I never thought of it that way",
-];
 
 const ChatRoom = ({ category, tags, onDisconnect }: ChatRoomProps) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isConnecting, setIsConnecting] = useState(true);
-  const [isTyping, setIsTyping] = useState(false);
+  const [roomId, setRoomId] = useState<string | null>(null);
+  const [strangerDisconnected, setStrangerDisconnected] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const channelRef = useRef<RealtimeChannel | null>(null);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const sessionId = useRef(getSessionId()).current;
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -57,53 +46,176 @@ const ChatRoom = ({ category, tags, onDisconnect }: ChatRoomProps) => {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, isTyping]);
+  }, [messages]);
 
-  // Simulate finding a stranger
-  useEffect(() => {
-    const timer = setTimeout(() => {
+  const cleanup = useCallback(async () => {
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
+    }
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+    await supabase.from("chat_queue").delete().eq("session_id", sessionId);
+    if (roomId) {
+      await supabase.from("chat_rooms").update({ is_active: false }).eq("id", roomId);
+    }
+  }, [sessionId, roomId]);
+
+  const subscribeToRoom = useCallback(
+    (rid: string) => {
+      setRoomId(rid);
       setIsConnecting(false);
+      setStrangerDisconnected(false);
       setMessages([
         {
-          id: "system-1",
-          text: "You're now chatting with a random stranger. Say hi!",
-          sender: "stranger",
+          id: "system-connected",
+          text: "You're now chatting with a real stranger. Say hi! 🎉",
+          sender: "system",
           timestamp: new Date(),
         },
       ]);
-    }, 2000 + Math.random() * 2000);
-    return () => clearTimeout(timer);
+
+      supabase
+        .from("chat_messages")
+        .select("*")
+        .eq("room_id", rid)
+        .order("created_at", { ascending: true })
+        .then(({ data }) => {
+          if (data && data.length > 0) {
+            const msgs: Message[] = data.map((m) => ({
+              id: m.id,
+              text: m.message,
+              sender: m.sender_session === sessionId ? "you" : "stranger",
+              timestamp: new Date(m.created_at),
+            }));
+            setMessages((prev) => [...prev, ...msgs]);
+          }
+        });
+
+      const channel = supabase
+        .channel(`room-${rid}`)
+        .on(
+          "postgres_changes",
+          { event: "INSERT", schema: "public", table: "chat_messages", filter: `room_id=eq.${rid}` },
+          (payload) => {
+            const msg = payload.new as any;
+            if (msg.sender_session !== sessionId) {
+              setMessages((prev) => [
+                ...prev,
+                { id: msg.id, text: msg.message, sender: "stranger", timestamp: new Date(msg.created_at) },
+              ]);
+            }
+          }
+        )
+        .on(
+          "postgres_changes",
+          { event: "UPDATE", schema: "public", table: "chat_rooms", filter: `id=eq.${rid}` },
+          (payload) => {
+            const room = payload.new as any;
+            if (!room.is_active) {
+              setStrangerDisconnected(true);
+              setMessages((prev) => [
+                ...prev,
+                { id: `system-disc-${Date.now()}`, text: "Stranger has disconnected.", sender: "system", timestamp: new Date() },
+              ]);
+            }
+          }
+        )
+        .subscribe();
+
+      channelRef.current = channel;
+    },
+    [sessionId]
+  );
+
+  const findMatch = useCallback(async () => {
+    setIsConnecting(true);
+    setMessages([]);
+    setRoomId(null);
+    setStrangerDisconnected(false);
+
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
+    }
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+
+    await supabase.from("chat_queue").delete().eq("session_id", sessionId);
+
+    const { data: waiting } = await supabase
+      .from("chat_queue")
+      .select("*")
+      .eq("category", category)
+      .neq("session_id", sessionId)
+      .order("created_at", { ascending: true })
+      .limit(1);
+
+    if (waiting && waiting.length > 0) {
+      const partner = waiting[0];
+      await supabase.from("chat_queue").delete().eq("id", partner.id);
+
+      const { data: room } = await supabase
+        .from("chat_rooms")
+        .insert({ user1_session: partner.session_id, user2_session: sessionId, category, is_active: true })
+        .select()
+        .single();
+
+      if (room) subscribeToRoom(room.id);
+    } else {
+      await supabase.from("chat_queue").upsert(
+        { session_id: sessionId, category, tags },
+        { onConflict: "session_id" }
+      );
+
+      pollingRef.current = setInterval(async () => {
+        const { data: rooms } = await supabase
+          .from("chat_rooms")
+          .select("*")
+          .eq("is_active", true)
+          .or(`user1_session.eq.${sessionId},user2_session.eq.${sessionId}`)
+          .order("created_at", { ascending: false })
+          .limit(1);
+
+        if (rooms && rooms.length > 0) {
+          if (pollingRef.current) {
+            clearInterval(pollingRef.current);
+            pollingRef.current = null;
+          }
+          await supabase.from("chat_queue").delete().eq("session_id", sessionId);
+          subscribeToRoom(rooms[0].id);
+        }
+      }, 2000);
+    }
+  }, [category, tags, sessionId, subscribeToRoom]);
+
+  useEffect(() => {
+    findMatch();
+    return () => { cleanup(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const simulateReply = useCallback(() => {
-    setIsTyping(true);
-    const delay = 1500 + Math.random() * 3000;
-    setTimeout(() => {
-      setIsTyping(false);
-      const response = STRANGER_RESPONSES[Math.floor(Math.random() * STRANGER_RESPONSES.length)];
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `stranger-${Date.now()}`,
-          text: response,
-          sender: "stranger",
-          timestamp: new Date(),
-        },
-      ]);
-    }, delay);
-  }, []);
-
-  const sendMessage = () => {
+  const sendMessage = async () => {
     const trimmed = input.trim();
-    if (!trimmed || isConnecting) return;
+    if (!trimmed || !roomId || strangerDisconnected) return;
+
+    const tempId = `you-${Date.now()}`;
     setMessages((prev) => [
       ...prev,
-      { id: `you-${Date.now()}`, text: trimmed, sender: "you", timestamp: new Date() },
+      { id: tempId, text: trimmed, sender: "you", timestamp: new Date() },
     ]);
     setInput("");
     inputRef.current?.focus();
-    // Simulate stranger response
-    if (Math.random() > 0.2) simulateReply();
+
+    await supabase.from("chat_messages").insert({
+      room_id: roomId,
+      sender_session: sessionId,
+      message: trimmed,
+    });
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -113,79 +225,45 @@ const ChatRoom = ({ category, tags, onDisconnect }: ChatRoomProps) => {
     }
   };
 
-  const reconnect = () => {
-    setMessages([]);
-    setIsConnecting(true);
-    setIsTyping(false);
-    setTimeout(() => {
-      setIsConnecting(false);
-      setMessages([
-        {
-          id: "system-new",
-          text: "You're now chatting with a new stranger. Say hi!",
-          sender: "stranger",
-          timestamp: new Date(),
-        },
-      ]);
-    }, 2000 + Math.random() * 2000);
+  const reconnect = async () => {
+    await cleanup();
+    findMatch();
+  };
+
+  const handleLeave = async () => {
+    await cleanup();
+    onDisconnect();
   };
 
   return (
     <div className="h-screen flex flex-col bg-background">
-      {/* Header */}
       <div className="glass border-b border-border/50 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-bold text-gradient">whispr</h1>
-          <Badge variant="outline" className="text-xs text-muted-foreground">
-            {category}
-          </Badge>
+          <Badge variant="outline" className="text-xs text-muted-foreground">{category}</Badge>
           {tags.slice(0, 3).map((t) => (
-            <Badge key={t} variant="outline" className="text-xs text-muted-foreground hidden md:inline-flex">
-              {t}
-            </Badge>
+            <Badge key={t} variant="outline" className="text-xs text-muted-foreground hidden md:inline-flex">{t}</Badge>
           ))}
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={reconnect}
-            className="text-muted-foreground hover:text-primary"
-          >
+          <Button variant="ghost" size="sm" onClick={reconnect} className="text-muted-foreground hover:text-primary">
             <RotateCcw className="w-4 h-4 mr-1" /> New
           </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onDisconnect}
-            className="text-muted-foreground hover:text-destructive"
-          >
+          <Button variant="ghost" size="sm" onClick={handleLeave} className="text-muted-foreground hover:text-destructive">
             <X className="w-4 h-4 mr-1" /> Leave
           </Button>
         </div>
       </div>
 
-      {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-6 space-y-3">
         {isConnecting && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="flex flex-col items-center justify-center h-full gap-4"
-          >
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center justify-center h-full gap-4">
             <div className="flex gap-1">
               {[0, 1, 2].map((i) => (
-                <motion.div
-                  key={i}
-                  className="w-3 h-3 rounded-full bg-primary"
-                  animate={{ y: [0, -12, 0] }}
-                  transition={{ repeat: Infinity, duration: 0.8, delay: i * 0.15 }}
-                />
+                <motion.div key={i} className="w-3 h-3 rounded-full bg-primary" animate={{ y: [0, -12, 0] }} transition={{ repeat: Infinity, duration: 0.8, delay: i * 0.15 }} />
               ))}
             </div>
-            <p className="text-muted-foreground font-mono text-sm">
-              Finding a stranger...
-            </p>
+            <p className="text-muted-foreground font-mono text-sm">Looking for a stranger...</p>
           </motion.div>
         )}
 
@@ -195,14 +273,14 @@ const ChatRoom = ({ category, tags, onDisconnect }: ChatRoomProps) => {
               key={msg.id}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              className={`flex ${msg.sender === "you" ? "justify-end" : "justify-start"}`}
+              className={`flex ${msg.sender === "you" ? "justify-end" : msg.sender === "system" ? "justify-center" : "justify-start"}`}
             >
               <div
                 className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm ${
                   msg.sender === "you"
                     ? "bg-primary text-primary-foreground rounded-br-md"
-                    : msg.id.startsWith("system")
-                    ? "bg-secondary/50 text-muted-foreground text-center text-xs italic max-w-full w-full"
+                    : msg.sender === "system"
+                    ? "bg-secondary/50 text-muted-foreground text-center text-xs italic max-w-full"
                     : "bg-secondary text-secondary-foreground rounded-bl-md"
                 }`}
               >
@@ -211,30 +289,9 @@ const ChatRoom = ({ category, tags, onDisconnect }: ChatRoomProps) => {
             </motion.div>
           ))}
         </AnimatePresence>
-
-        {isTyping && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="flex justify-start"
-          >
-            <div className="bg-secondary rounded-2xl rounded-bl-md px-4 py-3 flex gap-1">
-              {[0, 1, 2].map((i) => (
-                <motion.div
-                  key={i}
-                  className="w-2 h-2 rounded-full bg-muted-foreground"
-                  animate={{ opacity: [0.3, 1, 0.3] }}
-                  transition={{ repeat: Infinity, duration: 1, delay: i * 0.2 }}
-                />
-              ))}
-            </div>
-          </motion.div>
-        )}
-
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input */}
       <div className="glass border-t border-border/50 px-4 py-3">
         <div className="flex items-center gap-2 max-w-3xl mx-auto">
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground mr-2">
@@ -246,13 +303,13 @@ const ChatRoom = ({ category, tags, onDisconnect }: ChatRoomProps) => {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={isConnecting ? "Connecting..." : "Type a message..."}
-            disabled={isConnecting}
+            placeholder={isConnecting ? "Connecting..." : strangerDisconnected ? "Stranger left. Click 'New' to find another." : "Type a message..."}
+            disabled={isConnecting || strangerDisconnected}
             className="flex-1 bg-secondary/50 border border-border/50 rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors disabled:opacity-50"
           />
           <Button
             size="sm"
-            disabled={!input.trim() || isConnecting}
+            disabled={!input.trim() || isConnecting || strangerDisconnected}
             onClick={sendMessage}
             className="bg-primary text-primary-foreground hover:bg-primary/90 rounded-xl px-4"
           >
