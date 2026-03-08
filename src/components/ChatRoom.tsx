@@ -3,6 +3,17 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Send, X, RotateCcw, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { supabase } from "@/integrations/supabase/client";
+import type { RealtimeChannel } from "@supabase/supabase-js";
+
+const getSessionId = (): string => {
+  let sessionId = sessionStorage.getItem("whispr_session_id");
+  if (!sessionId) {
+    sessionId = crypto.randomUUID();
+    sessionStorage.setItem("whispr_session_id", sessionId);
+  }
+  return sessionId;
+};
 
 interface ChatRoomProps {
   category: string;
