@@ -26,29 +26,33 @@ const Index = () => {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [isChatting, setIsChatting] = useState(false);
   const [queueCounts, setQueueCounts] = useState<Record<string, number>>({});
+  const [totalOnline, setTotalOnline] = useState(0);
 
-  // Fetch queue counts and subscribe to real-time changes
+  // Fetch queue counts + active room users and subscribe to real-time changes
   useEffect(() => {
     const fetchCounts = async () => {
-      const { data } = await supabase.from("chat_queue").select("category");
-      if (data) {
-        const counts: Record<string, number> = {};
-        data.forEach((row) => {
-          counts[row.category] = (counts[row.category] || 0) + 1;
-        });
-        setQueueCounts(counts);
-      }
+      const [queueRes, roomsRes] = await Promise.all([
+        supabase.from("chat_queue").select("category"),
+        supabase.from("chat_rooms").select("id", { count: "exact", head: true }).eq("is_active", true),
+      ]);
+
+      const queueData = queueRes.data ?? [];
+      const counts: Record<string, number> = {};
+      queueData.forEach((row) => {
+        counts[row.category] = (counts[row.category] || 0) + 1;
+      });
+      setQueueCounts(counts);
+
+      const activeRoomCount = roomsRes.count ?? 0;
+      setTotalOnline(queueData.length + activeRoomCount * 2);
     };
 
     fetchCounts();
 
     const channel = supabase
       .channel("queue-counts")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "chat_queue" },
-        () => fetchCounts()
-      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "chat_queue" }, () => fetchCounts())
+      .on("postgres_changes", { event: "*", schema: "public", table: "chat_rooms" }, () => fetchCounts())
       .subscribe();
 
     return () => {
@@ -94,7 +98,7 @@ const Index = () => {
           <div className="flex items-center justify-center gap-2 mb-4">
             <div className="w-2 h-2 rounded-full bg-online pulse-online" />
             <span className="text-sm text-muted-foreground font-mono">
-              12,847 strangers online
+              {totalOnline.toLocaleString()} {totalOnline === 1 ? "stranger" : "strangers"} online
             </span>
           </div>
           <h1 className="text-5xl md:text-7xl font-bold mb-4 tracking-tight">
