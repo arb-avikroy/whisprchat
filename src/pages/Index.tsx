@@ -25,6 +25,7 @@ const ALL_TAGS = [
 const Index = () => {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [customInterest, setCustomInterest] = useState("");
   const [isChatting, setIsChatting] = useState(false);
   const [queueCounts, setQueueCounts] = useState<Record<string, number>>({});
   const [totalOnline, setTotalOnline] = useState(0);
