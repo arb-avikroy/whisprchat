@@ -26,29 +26,33 @@ const Index = () => {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [isChatting, setIsChatting] = useState(false);
   const [queueCounts, setQueueCounts] = useState<Record<string, number>>({});
+  const [totalOnline, setTotalOnline] = useState(0);
 
-  // Fetch queue counts and subscribe to real-time changes
+  // Fetch queue counts + active room users and subscribe to real-time changes
   useEffect(() => {
     const fetchCounts = async () => {
-      const { data } = await supabase.from("chat_queue").select("category");
-      if (data) {
-        const counts: Record<string, number> = {};
-        data.forEach((row) => {
-          counts[row.category] = (counts[row.category] || 0) + 1;
-        });
-        setQueueCounts(counts);
-      }
+      const [queueRes, roomsRes] = await Promise.all([
+        supabase.from("chat_queue").select("category"),
+        supabase.from("chat_rooms").select("id", { count: "exact", head: true }).eq("is_active", true),
+      ]);
+
+      const queueData = queueRes.data ?? [];
+      const counts: Record<string, number> = {};
+      queueData.forEach((row) => {
+        counts[row.category] = (counts[row.category] || 0) + 1;
+      });
+      setQueueCounts(counts);
+
+      const activeRoomCount = roomsRes.count ?? 0;
+      setTotalOnline(queueData.length + activeRoomCount * 2);
     };
 
     fetchCounts();
 
     const channel = supabase
       .channel("queue-counts")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "chat_queue" },
-        () => fetchCounts()
-      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "chat_queue" }, () => fetchCounts())
+      .on("postgres_changes", { event: "*", schema: "public", table: "chat_rooms" }, () => fetchCounts())
       .subscribe();
 
     return () => {
