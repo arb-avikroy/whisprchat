@@ -69,28 +69,20 @@ const Index = () => {
     );
   };
 
-  const addCustomInterest = () => {
-    const trimmed = customInterest.trim();
-    if (trimmed && !selectedTags.includes(trimmed) && selectedTags.length < 5) {
-      setSelectedTags((prev) => [...prev, trimmed]);
-      setCustomInterest("");
-    }
-  };
-
   const startChatWithInterest = () => {
     const trimmed = customInterest.trim();
-    const tags = [...selectedTags];
-    if (trimmed && !tags.includes(trimmed) && tags.length < 5) {
-      tags.push(trimmed);
-    }
-    setSelectedTags(tags);
+    if (!trimmed) return;
     if (!selectedCategory) setSelectedCategory("random");
+    setChatTags([trimmed]);
     setCustomInterest("");
     setIsChatting(true);
   };
 
   const startChat = () => {
-    if (selectedCategory) setIsChatting(true);
+    if (selectedCategory) {
+      setChatTags(selectedTags);
+      setIsChatting(true);
+    }
   };
 
   if (isChatting) {
