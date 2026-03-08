@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
-import { MessageCircle, Users, Globe, Shield, ArrowRight, Plus } from "lucide-react";
+import { MessageCircle, Users, Globe, Shield, ArrowRight } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -27,6 +27,7 @@ const Index = () => {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [customInterest, setCustomInterest] = useState("");
   const [isChatting, setIsChatting] = useState(false);
+  const [chatTags, setChatTags] = useState<string[]>([]);
   const [queueCounts, setQueueCounts] = useState<Record<string, number>>({});
   const [totalOnline, setTotalOnline] = useState(0);
 
@@ -68,35 +69,27 @@ const Index = () => {
     );
   };
 
-  const addCustomInterest = () => {
-    const trimmed = customInterest.trim();
-    if (trimmed && !selectedTags.includes(trimmed) && selectedTags.length < 5) {
-      setSelectedTags((prev) => [...prev, trimmed]);
-      setCustomInterest("");
-    }
-  };
-
   const startChatWithInterest = () => {
     const trimmed = customInterest.trim();
-    const tags = [...selectedTags];
-    if (trimmed && !tags.includes(trimmed) && tags.length < 5) {
-      tags.push(trimmed);
-    }
-    setSelectedTags(tags);
+    if (!trimmed) return;
     if (!selectedCategory) setSelectedCategory("random");
+    setChatTags([trimmed]);
     setCustomInterest("");
     setIsChatting(true);
   };
 
   const startChat = () => {
-    if (selectedCategory) setIsChatting(true);
+    if (selectedCategory) {
+      setChatTags(selectedTags);
+      setIsChatting(true);
+    }
   };
 
   if (isChatting) {
     return (
       <ChatRoom
         category={selectedCategory!}
-        tags={selectedTags}
+        tags={chatTags}
         onDisconnect={() => setIsChatting(false)}
       />
     );
@@ -208,39 +201,28 @@ const Index = () => {
               );
             })}
           </div>
-          {selectedTags.length < 5 && (
-            <div className="flex gap-2 mt-3">
-              <Input
-                value={customInterest}
-                onChange={(e) => setCustomInterest(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && customInterest.trim()) {
-                    e.preventDefault();
-                    startChatWithInterest();
-                  }
-                }}
-                placeholder="Type a custom interest & press Enter to chat..."
-                className="max-w-xs bg-card border-border/50 text-sm"
-              />
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={addCustomInterest}
-                disabled={!customInterest.trim()}
-                className="shrink-0"
-              >
-                <Plus className="w-4 h-4 mr-1" /> Add
-              </Button>
-              <Button
-                size="sm"
-                onClick={startChatWithInterest}
-                disabled={!customInterest.trim()}
-                className="shrink-0 bg-primary text-primary-foreground hover:bg-primary/90"
-              >
-                <ArrowRight className="w-4 h-4 mr-1" /> Chat Now
-              </Button>
-            </div>
-          )}
+          <div className="flex gap-2 mt-4">
+            <Input
+              value={customInterest}
+              onChange={(e) => setCustomInterest(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && customInterest.trim()) {
+                  e.preventDefault();
+                  startChatWithInterest();
+                }
+              }}
+              placeholder="Type your interest & press Enter to chat..."
+              className="max-w-sm bg-card border-border/50 text-sm"
+            />
+            <Button
+              size="sm"
+              onClick={startChatWithInterest}
+              disabled={!customInterest.trim()}
+              className="shrink-0 bg-primary text-primary-foreground hover:bg-primary/90"
+            >
+              <ArrowRight className="w-4 h-4 mr-1" /> Chat Now
+            </Button>
+          </div>
         </motion.div>
 
         {/* Start Button */}
